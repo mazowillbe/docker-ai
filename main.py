@@ -14,7 +14,7 @@ app = FastAPI(
 )
 
 HF_TOKEN = os.getenv("HUGGINGFACE_HUB_TOKEN")
-MODEL_NAME = "Qwen/Qwen3-1.7B"
+MODEL_NAME = "Qwen/Qwen-3-1.7B"  # ← dash, not Qwen3
 
 try:
     tokenizer = AutoTokenizer.from_pretrained(
