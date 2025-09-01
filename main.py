@@ -2,10 +2,10 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import pipeline
 
-app = FastAPI(title="Qwen-3 Distil API")
+app = FastAPI(title="Qwen-3 1.7B Instruct API")
 
-# Load model at startup (distilled Qwen)
-generator = pipeline("text-generation", model="Qwen/Qwen2.5-0.5B-Instruct")
+# Load Qwen-3 1.7B Instruct at startup
+generator = pipeline("text-generation", model="Qwen/Qwen-3-1.7B-Instruct")
 
 class Prompt(BaseModel):
     text: str
@@ -13,7 +13,7 @@ class Prompt(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "Qwen-3 Distil API is running. Visit /docs for Swagger UI."}
+    return {"message": "Qwen-3 1.7B API running. Visit /docs for Swagger UI."}
 
 @app.post("/generate")
 def generate(prompt: Prompt):
