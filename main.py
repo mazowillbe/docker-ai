@@ -2,18 +2,18 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import pipeline
 
-app = FastAPI(title="Tiny GPT-2 API")
+app = FastAPI(title="Qwen-3 Distil API")
 
-# Load model once at startup
-generator = pipeline("text-generation", model="sshleifer/tiny-gpt2")
+# Load model at startup (distilled Qwen)
+generator = pipeline("text-generation", model="Qwen/Qwen2.5-0.5B-Instruct")
 
 class Prompt(BaseModel):
     text: str
-    max_length: int = 50
+    max_length: int = 128
 
 @app.get("/")
 def root():
-    return {"message": "Tiny GPT-2 API is running. Visit /docs for Swagger UI."}
+    return {"message": "Qwen-3 Distil API is running. Visit /docs for Swagger UI."}
 
 @app.post("/generate")
 def generate(prompt: Prompt):
