@@ -13,11 +13,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# ------------------------------------------------------------------
-# Load token & model
-# ------------------------------------------------------------------
 HF_TOKEN = os.getenv("HUGGINGFACE_HUB_TOKEN")
-MODEL_NAME = "Qwen/Qwen3-1.7B-INT4"  # CPU-friendly quantized model
+MODEL_NAME = "Qwen/Qwen3-1.7B-INT4"
 
 try:
     tokenizer = AutoTokenizer.from_pretrained(
@@ -36,7 +33,7 @@ try:
         trust_remote_code=True,
         torch_dtype="auto",
         model_kwargs={
-            "load_in_4bit": True,      # Fits in 512 MB RAM
+            "load_in_4bit": True,
             "low_cpu_mem_usage": True
         }
     )
@@ -45,18 +42,19 @@ except Exception as e:
     logger.error(f"❌ Could not load model: {e}")
     generator = None
 
-# ------------------------------------------------------------------
-# Schemas
-# ------------------------------------------------------------------
+# ---------- Schemas ----------
 class Prompt(BaseModel):
-    text: str = Field(..., description="User prompt")
-    max_length: int = Field(128, ge=1, le=1024, description="Max new tokens")
+    text: str
+    max_length: int = Field(128, ge=1, le=1024)
     temperature: float = Field(0.7, ge=0.1, le=2.0)
     top_p: float = Field(0.9, ge=0.1, le=1.0)
 
-# ------------------------------------------------------------------
-# Routes
-# ------------------------------------------------------------------
+class CodePrompt(BaseModel):
+    instruction: str
+    language: str = "python"
+    max_tokens: int = Field(128, ge=1, le=512)
+
+# ---------- Routes ----------
 @app.get("/")
 def root():
     return {"status": "ok", "model": MODEL_NAME, "loaded": generator is not None}
@@ -69,12 +67,10 @@ def health():
 def generate(payload: Prompt):
     if not generator:
         raise HTTPException(503, "Model not loaded")
-
     messages = [{"role": "user", "content": payload.text}]
     prompt_text = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
-
     try:
         outputs = generator(
             prompt_text,
@@ -87,4 +83,29 @@ def generate(payload: Prompt):
         )
         return {"input": payload.text, "output": outputs[0]["generated_text"]}
     except Exception as e:
-        logger
+        logger.exception("Generation error")
+        raise HTTPException(500, str(e))
+
+@app.post("/generate_code")
+def generate_code(payload: CodePrompt):
+    if not generator:
+        raise HTTPException(503, "Model not loaded")
+    system = f"You are a {payload.language} coding assistant."
+    prompt = (
+        f"<|im_start|>system\n{system}<|im_end|>\n"
+        f"<|im_start|>user\n{payload.instruction}<|im_end|>\n<|im_start|>assistant\n"
+    )
+    try:
+        out = generator(
+            prompt,
+            max_new_tokens=payload.max_tokens,
+            temperature=0.2,
+            top_p=0.95,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id,
+            return_full_text=False
+        )
+        return {"language": payload.language, "generated_code": out[0]["generated_text"]}
+    except Exception as e:
+        logger.exception("Code generation error")
+        raise HTTPException(500, str(e))
