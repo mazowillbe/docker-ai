@@ -33,7 +33,6 @@ try:
         trust_remote_code=True,
         torch_dtype="auto",
         model_kwargs={
-            "load_in_4bit": True,
             "low_cpu_mem_usage": True
         }
     )
