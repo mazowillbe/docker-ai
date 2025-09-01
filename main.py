@@ -5,9 +5,9 @@ import os
 
 app = FastAPI(title="Qwen-3 1.7B Instruct API")
 
-# Load model with Hugging Face token
 HF_TOKEN = os.environ.get("HUGGINGFACE_HUB_TOKEN")
 
+# Load model when the container starts
 generator = pipeline(
     "text-generation",
     model="Qwen/Qwen-3-1.7B-Instruct",
