@@ -1,175 +1,90 @@
-from fastapi import FastAPI, HTTPException
+        from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from transformers import pipeline, AutoTokenizer
 import os
 import logging
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Qwen-3 1.7B API",
-    description="FastAPI wrapper for Qwen-3-1.7B model",
+    title="Qwen-3-1.7B-CPU API",
+    description="Lightweight API for Qwen-3-1.7B-INT4 on CPU",
     version="1.0.0"
 )
 
-# Get token from environment
-HF_TOKEN = os.environ.get("HUGGINGFACE_HUB_TOKEN")
-if not HF_TOKEN:
-    logger.warning("HUGGINGFACE_HUB_TOKEN not found in environment variables")
-
-# Model configuration
-MODEL_NAME = "Qwen/Qwen3-1.7B"
+# ------------------------------------------------------------------
+# Load token & model
+# ------------------------------------------------------------------
+HF_TOKEN = os.getenv("HUGGINGFACE_HUB_TOKEN")
+MODEL_NAME = "Qwen/Qwen3-1.7B-INT4"  # CPU-friendly quantized model
 
 try:
-    # Initialize tokenizer and pipeline
     tokenizer = AutoTokenizer.from_pretrained(
         MODEL_NAME,
         use_auth_token=HF_TOKEN,
         trust_remote_code=True
     )
-    
-    # Ensure pad token is set
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    
-    # Initialize pipeline with optimizations
+
     generator = pipeline(
         "text-generation",
         model=MODEL_NAME,
         tokenizer=tokenizer,
         use_auth_token=HF_TOKEN,
-        torch_dtype="auto",
-        device_map="auto",
         trust_remote_code=True,
+        torch_dtype="auto",
         model_kwargs={
-            "load_in_8bit": True,  # Enable 8-bit quantization for memory efficiency
+            "load_in_4bit": True,      # Fits in 512 MB RAM
             "low_cpu_mem_usage": True
         }
     )
-    
-    logger.info("Model loaded successfully")
-    
+    logger.info("✅ Model loaded successfully")
 except Exception as e:
-    logger.error(f"Error loading model: {str(e)}")
+    logger.error(f"❌ Could not load model: {e}")
     generator = None
 
+# ------------------------------------------------------------------
+# Schemas
+# ------------------------------------------------------------------
 class Prompt(BaseModel):
-    text: str = Field(..., description="Input text for generation")
-    max_length: int = Field(default=512, ge=1, le=32768, description="Maximum tokens to generate")
-    temperature: float = Field(default=0.7, ge=0.1, le=2.0, description="Sampling temperature")
-    top_p: float = Field(default=0.9, ge=0.1, le=1.0, description="Top-p sampling parameter")
-    do_sample: bool = Field(default=True, description="Enable sampling")
+    text: str = Field(..., description="User prompt")
+    max_length: int = Field(128, ge=1, le=1024, description="Max new tokens")
+    temperature: float = Field(0.7, ge=0.1, le=2.0)
+    top_p: float = Field(0.9, ge=0.1, le=1.0)
 
+# ------------------------------------------------------------------
+# Routes
+# ------------------------------------------------------------------
 @app.get("/")
 def root():
-    return {
-        "message": "Qwen-3 1.7B API running",
-        "model": MODEL_NAME,
-        "status": "ready" if generator else "error"
-    }
+    return {"status": "ok", "model": MODEL_NAME, "loaded": generator is not None}
 
 @app.get("/health")
-def health_check():
-    return {
-        "status": "healthy" if generator else "unhealthy",
-        "model_loaded": generator is not None
-    }
+def health():
+    return {"status": "healthy" if generator else "unhealthy"}
 
 @app.post("/generate")
-def generate(prompt: Prompt):
+def generate(payload: Prompt):
     if not generator:
-        raise HTTPException(
-            status_code=503,
-            detail="Model not loaded. Check server logs for details."
-        )
-    
-    try:
-        # Prepare messages for chat format
-        messages = [{"role": "user", "content": prompt.text}]
-        
-        # Apply chat template
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        
-        # Generate response
-        outputs = generator(
-            text,
-            max_new_tokens=prompt.max_length,
-            temperature=prompt.temperature,
-            top_p=prompt.top_p,
-            do_sample=prompt.do_sample,
-            pad_token_id=tokenizer.eos_token_id,
-            return_full_text=False
-        )
-        
-        # Extract only the generated response
-        response_text = outputs[0]["generated_text"]
-        
-        return {
-            "input": prompt.text,
-            "output": response_text,
-            "parameters": {
-                "max_length": prompt.max_length,
-                "temperature": prompt.temperature,
-                "top_p": prompt.top_p
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Generation error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(503, "Model not loaded")
 
-@app.post("/chat")
-def chat_completion(messages: list[dict[str, str]], prompt: Prompt):
-    """
-    Full chat completion endpoint that accepts conversation history
-    """
-    if not generator:
-        raise HTTPException(
-            status_code=503,
-            detail="Model not loaded. Check server logs for details."
-        )
-    
+    messages = [{"role": "user", "content": payload.text}]
+    prompt_text = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+
     try:
-        # Convert messages to the required format
-        conversation = [{"role": msg["role"], "content": msg["content"]} 
-                       for msg in messages]
-        
-        # Apply chat template
-        text = tokenizer.apply_chat_template(
-            conversation,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        
-        # Generate response
         outputs = generator(
-            text,
-            max_new_tokens=prompt.max_length,
-            temperature=prompt.temperature,
-            top_p=prompt.top_p,
-            do_sample=prompt.do_sample,
+            prompt_text,
+            max_new_tokens=payload.max_length,
+            temperature=payload.temperature,
+            top_p=payload.top_p,
+            do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
             return_full_text=False
         )
-        
-        response_text = outputs[0]["generated_text"]
-        
-        return {
-            "messages": conversation,
-            "response": response_text,
-            "parameters": {
-                "max_length": prompt.max_length,
-                "temperature": prompt.temperature,
-                "top_p": prompt.top_p
-            }
-        }
-        
+        return {"input": payload.text, "output": outputs[0]["generated_text"]}
     except Exception as e:
-        logger.error(f"Chat completion error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger
