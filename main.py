@@ -1,11 +1,18 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import pipeline
+import os
 
 app = FastAPI(title="Qwen-3 1.7B Instruct API")
 
-# Load Qwen-3 1.7B Instruct at startup
-generator = pipeline("text-generation", model="Qwen/Qwen-3-1.7B-Instruct")
+# Load model with Hugging Face token
+HF_TOKEN = os.environ.get("HUGGINGFACE_HUB_TOKEN")
+
+generator = pipeline(
+    "text-generation",
+    model="Qwen/Qwen-3-1.7B-Instruct",
+    use_auth_token=HF_TOKEN
+)
 
 class Prompt(BaseModel):
     text: str
