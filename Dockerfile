@@ -5,13 +5,17 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download Qwen-3 1.7B instruct model to bake into image
-RUN python -c "from transformers import pipeline; pipeline('text-generation', model='Qwen/Qwen-3-1.7B-Instruct')"
+# Set Hugging Face token as env variable
+ENV HUGGINGFACE_HUB_TOKEN=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
 
+# Pre-download Qwen-3 1.7B instruct model
+RUN python -c "from transformers import pipeline; pipeline('text-generation', model='Qwen/Qwen-3-1.7B-Instruct', use_auth_token=True)"
+
+# Copy project files
 COPY . .
 
 EXPOSE 8000
